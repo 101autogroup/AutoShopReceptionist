@@ -1,0 +1,160 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply antialiased scroll-smooth;
+  }
+  body {
+    @apply bg-surface-950 text-surface-100 font-sans;
+  }
+}
+
+@layer components {
+  /* Buttons */
+  .btn {
+    @apply px-4 py-2.5 rounded-xl font-medium transition-all duration-200 inline-flex items-center justify-center gap-2 text-sm;
+  }
+  .btn-primary {
+    @apply bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white shadow-lg shadow-brand-600/25 hover:shadow-brand-500/30;
+  }
+  .btn-secondary {
+    @apply bg-surface-800/80 hover:bg-surface-700 text-surface-100 border border-surface-700/50 hover:border-surface-600;
+  }
+  .btn-danger {
+    @apply bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white shadow-lg shadow-red-600/25;
+  }
+  .btn-ghost {
+    @apply text-surface-400 hover:text-surface-100 hover:bg-surface-800/50;
+  }
+  
+  /* Cards */
+  .card {
+    @apply bg-surface-900/50 backdrop-blur-sm border border-surface-800/50 rounded-2xl p-5 sm:p-6 shadow-xl shadow-black/5;
+  }
+  .card-hover {
+    @apply hover:border-surface-700/50 hover:shadow-2xl hover:shadow-brand-500/5 transition-all duration-300;
+  }
+  
+  /* Inputs */
+  .input {
+    @apply w-full px-4 py-3 bg-surface-800/50 border border-surface-700/50 rounded-xl text-surface-100 placeholder:text-surface-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500/50 transition-all duration-200;
+  }
+  .label {
+    @apply block text-sm font-medium text-surface-400 mb-2;
+  }
+  
+  /* Stats */
+  .stat-card {
+    @apply card flex flex-col relative overflow-hidden;
+  }
+  .stat-card::before {
+    content: '';
+    @apply absolute top-0 right-0 w-20 sm:w-32 h-20 sm:h-32 bg-gradient-to-br from-brand-500/10 to-transparent rounded-full -translate-y-1/2 translate-x-1/2;
+  }
+  .stat-value {
+    @apply text-xl sm:text-2xl lg:text-3xl font-bold text-white mt-1 sm:mt-2 relative;
+  }
+  .stat-label {
+    @apply text-xs sm:text-sm text-surface-400 flex items-center relative;
+  }
+  
+  /* Chart cards */
+  .chart-card {
+    @apply card;
+  }
+  
+  /* Tables */
+  .table-container {
+    @apply overflow-x-auto rounded-2xl border border-surface-800/50 bg-surface-900/30;
+  }
+  .table {
+    @apply w-full text-sm text-left;
+  }
+  .table thead {
+    @apply bg-surface-800/50 text-surface-400 text-xs uppercase tracking-wider;
+  }
+  .table th {
+    @apply px-4 sm:px-6 py-4 font-semibold whitespace-nowrap;
+  }
+  .table td {
+    @apply px-4 sm:px-6 py-4 border-t border-surface-800/50;
+  }
+  .table tbody tr {
+    @apply bg-transparent hover:bg-surface-800/30 transition-colors;
+  }
+  
+  /* Badges */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold tracking-wide;
+  }
+  .badge-success {
+    @apply bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/20;
+  }
+  .badge-warning {
+    @apply bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/20;
+  }
+  .badge-error {
+    @apply bg-red-500/15 text-red-400 ring-1 ring-red-500/20;
+  }
+  .badge-info {
+    @apply bg-cyan-500/15 text-cyan-400 ring-1 ring-cyan-500/20;
+  }
+  .badge-default {
+    @apply bg-surface-700/50 text-surface-300 ring-1 ring-surface-600/30;
+  }
+  
+  /* Empty states */
+  .empty-state {
+    @apply text-center py-12 sm:py-16;
+  }
+  .empty-state-icon {
+    @apply w-16 h-16 mx-auto mb-4 text-surface-600;
+  }
+  .empty-state-title {
+    @apply text-lg font-semibold text-surface-200 mb-2;
+  }
+  .empty-state-text {
+    @apply text-surface-400;
+  }
+  
+  /* Page headers */
+  .page-header {
+    @apply mb-2 sm:mb-4;
+  }
+  .page-title {
+    @apply text-lg sm:text-xl lg:text-2xl font-bold text-white;
+  }
+  .page-subtitle {
+    @apply text-surface-400 mt-0.5 sm:mt-1 text-xs sm:text-sm;
+  }
+  
+  /* Filter dropdowns */
+  .dropdown {
+    @apply absolute top-full left-0 mt-2 bg-surface-800/95 backdrop-blur-xl border border-surface-700/50 rounded-xl shadow-2xl shadow-black/20 z-50 overflow-hidden;
+  }
+  .dropdown-item {
+    @apply block w-full text-left px-4 py-2.5 text-sm hover:bg-surface-700/50 transition-colors;
+  }
+  .dropdown-item.active {
+    @apply text-brand-400 bg-brand-500/10;
+  }
+  
+  /* Audio player */
+  audio {
+    @apply h-8 rounded-lg;
+  }
+  audio::-webkit-media-controls-panel {
+    @apply bg-surface-800;
+  }
+}
+
+/* Responsive utilities */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}

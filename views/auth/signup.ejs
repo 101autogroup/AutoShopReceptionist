@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign Up | AI-Telle</title>
+  <link rel="stylesheet" href="/css/output.css">
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+  <!-- Background pattern -->
+  <div class="fixed inset-0 -z-10">
+    <div class="absolute inset-0 bg-gradient-to-br from-surface-950 via-surface-900 to-surface-950"></div>
+    <div class="absolute inset-0 opacity-30" style="background-image: radial-gradient(circle at 1px 1px, rgb(59, 130, 246, 0.15) 1px, transparent 0); background-size: 40px 40px;"></div>
+    <div class="absolute top-0 right-1/4 w-96 h-96 bg-emerald-600/15 rounded-full blur-3xl"></div>
+    <div class="absolute bottom-0 left-1/4 w-96 h-96 bg-brand-600/20 rounded-full blur-3xl"></div>
+  </div>
+
+  <div class="w-full max-w-md">
+    <!-- Logo -->
+    <div class="text-center mb-8">
+      <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-600 mb-4">
+        <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+        </svg>
+      </div>
+      <h1 class="text-2xl font-bold text-surface-50">Create an account</h1>
+      <p class="text-surface-400 mt-2">Get started with AI-Telle analytics</p>
+    </div>
+
+    <!-- Signup card -->
+    <div class="card">
+      <% if (error) { %>
+      <div class="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
+        <p class="text-sm text-red-400 flex items-center gap-2">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <%= error %>
+        </p>
+      </div>
+      <% } %>
+
+      <form action="/signup" method="POST" class="space-y-5">
+        <div>
+          <label for="name" class="label">Full Name</label>
+          <input 
+            type="text" 
+            id="name" 
+            name="name" 
+            class="input" 
+            placeholder="John Doe"
+            required
+            autocomplete="name"
+          >
+        </div>
+
+        <div>
+          <label for="email" class="label">Email</label>
+          <input 
+            type="email" 
+            id="email" 
+            name="email" 
+            class="input" 
+            placeholder="you@example.com"
+            required
+            autocomplete="email"
+          >
+        </div>
+
+        <div>
+          <label for="password" class="label">Password</label>
+          <input 
+            type="password" 
+            id="password" 
+            name="password" 
+            class="input" 
+            placeholder="At least 8 characters"
+            required
+            minlength="8"
+            autocomplete="new-password"
+          >
+        </div>
+
+        <div>
+          <label for="confirmPassword" class="label">Confirm Password</label>
+          <input 
+            type="password" 
+            id="confirmPassword" 
+            name="confirmPassword" 
+            class="input" 
+            placeholder="Confirm your password"
+            required
+            minlength="8"
+            autocomplete="new-password"
+          >
+        </div>
+
+        <button type="submit" class="btn btn-primary w-full">
+          Create account
+        </button>
+      </form>
+
+      <div class="mt-6 text-center">
+        <p class="text-surface-400 text-sm">
+          Already have an account?
+          <a href="/login" class="text-brand-400 hover:text-brand-300 font-medium">Sign in</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+

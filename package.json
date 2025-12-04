@@ -1,0 +1,33 @@
+{
+  "name": "ai-telle",
+  "version": "1.0.0",
+  "description": "Retell AI Analytics Dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "npm run build && node server.js",
+    "build": "npx tailwindcss -i ./src/input.css -o ./public/css/output.css --minify",
+    "dev": "nodemon server.js",
+    "build:css": "npx tailwindcss -i ./src/input.css -o ./public/css/output.css --watch",
+    "build:css:prod": "npx tailwindcss -i ./src/input.css -o ./public/css/output.css --minify",
+    "create-admin": "node scripts/create-admin.js",
+    "list-users": "node scripts/list-users.js",
+    "delete-user": "node scripts/delete-user.js",
+    "test": "node test/run-all.js",
+    "test:api": "node test/api-test.js",
+    "test:db": "node test/db-test.js"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "connect-mongo": "^5.1.0",
+    "dotenv": "^16.3.1",
+    "ejs": "^3.1.9",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "mongoose": "^8.0.3",
+    "retell-sdk": "^4.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "tailwindcss": "^3.4.0"
+  }
+}

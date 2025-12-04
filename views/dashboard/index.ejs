@@ -1,0 +1,824 @@
+<%- include('../layouts/main', { body: ` 
+<div class="space-y-4 sm:space-y-5 lg:space-y-6 pb-6">
+  <!-- Header -->
+  <div class="page-header">
+    <h1 class="page-title">Analytics Dashboard</h1>
+    <p class="page-subtitle hidden sm:block">Monitor your voice agent performance</p>
+  </div>
+  
+  <!-- Filter Bar -->
+  <div class="flex flex-wrap items-center gap-2">
+    <!-- Time Range Dropdown -->
+    <div class="relative">
+      <button type="button" id="timeRangeBtn" class="btn btn-secondary text-xs sm:text-sm h-9 sm:h-10 px-3 sm:px-4">
+        <svg class="w-4 h-4 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+        </svg>
+        <span id="timeRangeLabel">${timeRanges[filters.range]?.label || 'All time'}</span>
+        <svg class="w-3 h-3 sm:w-4 sm:h-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </button>
+      <div id="timeRangeDropdown" class="hidden dropdown w-40 sm:w-44">
+        <div class="py-1">
+          ${Object.entries(timeRanges).map(([key, value]) => '<a href="#" data-range="' + key + '" class="dropdown-item time-range-option ' + (filters.range === key ? 'active' : 'text-surface-300') + '">' + value.label + '</a>').join('')}
+        </div>
+      </div>
+    </div>
+    
+    <!-- Filter Button -->
+    <div class="relative">
+      <button type="button" id="filterBtn" class="btn btn-secondary text-xs sm:text-sm h-9 sm:h-10 px-3 sm:px-4">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/>
+        </svg>
+        <span class="hidden sm:inline">Filter</span>
+        ${filters.agent || filters.startDate ? '<span class="w-1.5 h-1.5 bg-brand-400 rounded-full"></span>' : ''}
+      </button>
+      <div id="filterDropdown" class="hidden dropdown w-[280px] sm:w-80 p-4 right-0 left-auto sm:left-0 sm:right-auto">
+        <div class="space-y-4">
+          <div class="flex items-center justify-between pb-3 border-b border-surface-700/50">
+            <span class="text-sm font-semibold text-white">Filters</span>
+            <button type="button" id="closeFilterBtn" class="p-1.5 -mr-1.5 rounded-lg text-surface-400 hover:text-white hover:bg-surface-700/50 transition-colors">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+          <div>
+            <label class="label">Agent</label>
+            <select id="agentFilterSelect" class="input text-sm h-10">
+              <option value="">All Agents</option>
+              ${agents.map(a => '<option value="' + a.agent_id + '"' + (filters.agent === a.agent_id ? ' selected' : '') + '>' + (a.agent_name || a.agent_id.substring(0, 16)) + '</option>').join('')}
+            </select>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="label">From</label>
+              <input type="date" id="startDateInput" value="${filters.startDate}" class="input text-sm h-10">
+            </div>
+            <div>
+              <label class="label">To</label>
+              <input type="date" id="endDateInput" value="${filters.endDate}" class="input text-sm h-10">
+            </div>
+          </div>
+          <button type="button" id="applyFiltersBtn" class="btn btn-primary w-full h-10">Apply Filters</button>
+        </div>
+      </div>
+    </div>
+    
+    ${(filters.range !== 'all' || filters.agent || filters.startDate) ? '<a href="/dashboard" class="text-xs sm:text-sm text-surface-400 hover:text-white transition-colors px-2">Reset</a>' : ''}
+    
+    <!-- Active Filters -->
+    <div class="hidden md:flex items-center gap-2 ml-auto">
+      ${filters.range !== 'all' ? '<span class="badge badge-info text-xs">' + (timeRanges[filters.range]?.label || '') + '</span>' : ''}
+      ${filters.startDate ? '<span class="badge badge-info text-xs">' + filters.startDate + (filters.endDate ? ' → ' + filters.endDate : '') + '</span>' : ''}
+      ${filters.agent ? '<span class="badge badge-info text-xs">Filtered</span>' : ''}
+    </div>
+  </div>
+
+  ${typeof error !== 'undefined' && error ? '<div class="p-3 sm:p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl"><p class="text-xs sm:text-sm text-amber-400">' + error + '</p></div>' : ''}
+
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" class="hidden fixed inset-0 bg-surface-950/80 backdrop-blur-sm z-50 flex items-center justify-center">
+    <div class="flex flex-col items-center gap-4">
+      <div class="w-12 h-12 border-4 border-surface-700 border-t-brand-500 rounded-full animate-spin"></div>
+      <p class="text-surface-400 text-sm">Loading analytics...</p>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-3 gap-2 sm:gap-4 lg:gap-6">
+    <div class="stat-card p-3 sm:p-5">
+      <div class="stat-label text-[10px] sm:text-sm">
+        <div class="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-brand-500/20 flex items-center justify-center mr-1 sm:mr-2 flex-shrink-0">
+          <svg class="w-3 h-3 sm:w-4 sm:h-4 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+          </svg>
+        </div>
+        <span class="hidden sm:inline">Total </span>Calls
+      </div>
+      <div class="text-lg sm:text-2xl lg:text-3xl font-bold text-white mt-1 sm:mt-2">${analytics.totalCalls.toLocaleString()}</div>
+    </div>
+
+    <div class="stat-card p-3 sm:p-5">
+      <div class="stat-label text-[10px] sm:text-sm">
+        <div class="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center mr-1 sm:mr-2 flex-shrink-0">
+          <svg class="w-3 h-3 sm:w-4 sm:h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+        </div>
+        <span class="hidden sm:inline">Avg </span>Duration
+      </div>
+      <div class="text-lg sm:text-2xl lg:text-3xl font-bold text-white mt-1 sm:mt-2">${formatDuration(analytics.avgDuration)}</div>
+    </div>
+
+    <div class="stat-card p-3 sm:p-5">
+      <div class="stat-label text-[10px] sm:text-sm">
+        <div class="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-amber-500/20 flex items-center justify-center mr-1 sm:mr-2 flex-shrink-0">
+          <svg class="w-3 h-3 sm:w-4 sm:h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+        </div>
+        Latency
+      </div>
+      <div class="text-lg sm:text-2xl lg:text-3xl font-bold text-white mt-1 sm:mt-2">${Math.round(analytics.avgLatency)}<span class="text-xs sm:text-base lg:text-lg text-surface-500 ml-0.5">ms</span></div>
+    </div>
+  </div>
+
+  <!-- Stacked Bar Charts Row -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
+    <div class="chart-card p-3 sm:p-5">
+      <div class="flex items-center gap-2 mb-3 sm:mb-4">
+        <svg class="w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+        </svg>
+        <h3 class="text-sm sm:text-base font-semibold text-white">Call Successful</h3>
+        <span class="text-xs text-surface-500 ml-auto">All agents</span>
+      </div>
+      <div class="h-48 sm:h-56 chart-loading" id="callSuccessStackedContainer">
+        <canvas id="callSuccessStackedChart"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card p-3 sm:p-5">
+      <div class="flex items-center gap-2 mb-3 sm:mb-4">
+        <svg class="w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+        </svg>
+        <h3 class="text-sm sm:text-base font-semibold text-white">Disconnection Reason</h3>
+        <span class="text-xs text-surface-500 ml-auto">All agents</span>
+      </div>
+      <div class="h-48 sm:h-56 chart-loading" id="disconnectionStackedContainer">
+        <canvas id="disconnectionStackedChart"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card p-3 sm:p-5">
+      <div class="flex items-center gap-2 mb-3 sm:mb-4">
+        <svg class="w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+        </svg>
+        <h3 class="text-sm sm:text-base font-semibold text-white">User Sentiment</h3>
+        <span class="text-xs text-surface-500 ml-auto">All agents</span>
+      </div>
+      <div class="h-48 sm:h-56 chart-loading" id="sentimentStackedContainer">
+        <canvas id="sentimentStackedChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Agent Horizontal Bar Charts Row -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
+    <div class="chart-card p-3 sm:p-5">
+      <div class="flex items-center gap-2 mb-3 sm:mb-4">
+        <svg class="w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+        </svg>
+        <h3 class="text-sm sm:text-base font-semibold text-white">Call Successful</h3>
+        <span class="text-xs text-surface-500 ml-auto">All agents</span>
+      </div>
+      <div class="h-56 sm:h-64 chart-loading" id="agentSuccessContainer">
+        <canvas id="agentSuccessChart"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card p-3 sm:p-5">
+      <div class="flex items-center gap-2 mb-3 sm:mb-4">
+        <svg class="w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+        </svg>
+        <h3 class="text-sm sm:text-base font-semibold text-white">Call Picked Up Rate</h3>
+        <span class="text-xs text-surface-500 ml-auto">All agents</span>
+      </div>
+      <div class="h-56 sm:h-64 chart-loading" id="agentPickedUpContainer">
+        <canvas id="agentPickedUpChart"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card p-3 sm:p-5">
+      <div class="flex items-center gap-2 mb-3 sm:mb-4">
+        <svg class="w-4 h-4 text-surface-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+        </svg>
+        <h3 class="text-sm sm:text-base font-semibold text-white">Call Transfer Rate</h3>
+        <span class="text-xs text-surface-500 ml-auto">All agents</span>
+      </div>
+      <div class="h-56 sm:h-64 chart-loading" id="agentTransferContainer">
+        <canvas id="agentTransferChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Donut Charts Row -->
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
+    <div class="chart-card p-3 sm:p-5">
+      <h3 class="text-sm sm:text-base font-semibold text-white mb-3 sm:mb-4">Success Overview</h3>
+      <div class="h-40 sm:h-48 flex items-center justify-center chart-loading" id="callSuccessContainer">
+        <canvas id="callSuccessChart"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card p-3 sm:p-5">
+      <h3 class="text-sm sm:text-base font-semibold text-white mb-3 sm:mb-4">Sentiment Overview</h3>
+      <div class="h-40 sm:h-48 flex items-center justify-center chart-loading" id="sentimentContainer">
+        <canvas id="sentimentChart"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card p-3 sm:p-5">
+      <h3 class="text-sm sm:text-base font-semibold text-white mb-3 sm:mb-4">Direction</h3>
+      <div class="h-40 sm:h-48 flex items-center justify-center chart-loading" id="directionContainer">
+        <canvas id="directionChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rate Trend Charts -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
+    <div class="chart-card p-3 sm:p-5">
+      <h3 class="text-xs sm:text-sm font-semibold text-white mb-3">Picked Up Rate Trend</h3>
+      <div class="h-32 sm:h-40 chart-loading" id="pickedUpContainer">
+        <canvas id="pickedUpRateChart"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card p-3 sm:p-5">
+      <h3 class="text-xs sm:text-sm font-semibold text-white mb-3">Success Rate Trend</h3>
+      <div class="h-32 sm:h-40 chart-loading" id="successRateContainer">
+        <canvas id="successRateChart"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card p-3 sm:p-5 sm:col-span-2 lg:col-span-1">
+      <h3 class="text-xs sm:text-sm font-semibold text-white mb-3">Transfer Rate Trend</h3>
+      <div class="h-32 sm:h-40 chart-loading" id="transferContainer">
+        <canvas id="transferRateChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- More Rate Charts -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
+    <div class="chart-card p-3 sm:p-5">
+      <h3 class="text-xs sm:text-sm font-semibold text-white mb-3">Voicemail Rate Trend</h3>
+      <div class="h-32 sm:h-40 chart-loading" id="voicemailContainer">
+        <canvas id="voicemailRateChart"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card p-3 sm:p-5">
+      <h3 class="text-xs sm:text-sm font-semibold text-white mb-3">Avg Duration Trend</h3>
+      <div class="h-32 sm:h-40 chart-loading" id="avgDurationContainer">
+        <canvas id="avgDurationChart"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-card p-3 sm:p-5 sm:col-span-2 lg:col-span-1">
+      <h3 class="text-xs sm:text-sm font-semibold text-white mb-3">Avg Latency Trend</h3>
+      <div class="h-32 sm:h-40 chart-loading" id="avgLatencyContainer">
+        <canvas id="avgLatencyChart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .chart-loading {
+    position: relative;
+  }
+  .chart-loading::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.05), transparent);
+    animation: shimmer 1.5s infinite;
+    border-radius: 0.75rem;
+    z-index: 1;
+  }
+  .chart-loading.loaded::before {
+    display: none;
+  }
+  @keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+  .animate-spin {
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+</style>
+
+<script>
+  // Filter functionality
+  (function() {
+    var timeRangeBtn = document.getElementById('timeRangeBtn');
+    var timeRangeDropdown = document.getElementById('timeRangeDropdown');
+    var filterBtn = document.getElementById('filterBtn');
+    var filterDropdown = document.getElementById('filterDropdown');
+    var closeFilterBtn = document.getElementById('closeFilterBtn');
+    
+    function closeAllDropdowns() {
+      timeRangeDropdown.classList.add('hidden');
+      filterDropdown.classList.add('hidden');
+    }
+    
+    timeRangeBtn.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var isHidden = timeRangeDropdown.classList.contains('hidden');
+      closeAllDropdowns();
+      if (isHidden) timeRangeDropdown.classList.remove('hidden');
+    });
+    
+    filterBtn.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var isHidden = filterDropdown.classList.contains('hidden');
+      closeAllDropdowns();
+      if (isHidden) filterDropdown.classList.remove('hidden');
+    });
+    
+    closeFilterBtn.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      filterDropdown.classList.add('hidden');
+    });
+    
+    document.addEventListener('click', function(e) {
+      if (!timeRangeDropdown.contains(e.target) && !timeRangeBtn.contains(e.target)) {
+        timeRangeDropdown.classList.add('hidden');
+      }
+      if (!filterDropdown.contains(e.target) && !filterBtn.contains(e.target)) {
+        filterDropdown.classList.add('hidden');
+      }
+    });
+    
+    document.querySelectorAll('.time-range-option').forEach(function(option) {
+      option.addEventListener('click', function(e) {
+        e.preventDefault();
+        showLoading();
+        var range = this.dataset.range;
+        if (range === 'custom') {
+          hideLoading();
+          timeRangeDropdown.classList.add('hidden');
+          filterDropdown.classList.remove('hidden');
+        } else {
+          applyFilters(range);
+        }
+      });
+    });
+    
+    document.getElementById('applyFiltersBtn').addEventListener('click', function(e) {
+      e.preventDefault();
+      showLoading();
+      var startDate = document.getElementById('startDateInput').value;
+      var endDate = document.getElementById('endDateInput').value;
+      applyFilters(startDate || endDate ? 'custom' : 'all');
+    });
+    
+    function showLoading() {
+      document.getElementById('loadingOverlay').classList.remove('hidden');
+    }
+    
+    function hideLoading() {
+      document.getElementById('loadingOverlay').classList.add('hidden');
+    }
+    
+    function applyFilters(range) {
+      var agent = document.getElementById('agentFilterSelect').value;
+      var startDate = document.getElementById('startDateInput').value;
+      var endDate = document.getElementById('endDateInput').value;
+      var url = '/dashboard?range=' + range;
+      if (agent) url += '&agent=' + encodeURIComponent(agent);
+      if (startDate) url += '&startDate=' + encodeURIComponent(startDate);
+      if (endDate) url += '&endDate=' + encodeURIComponent(endDate);
+      window.location.href = url;
+    }
+    
+    window.markChartLoaded = function(containerId) {
+      var container = document.getElementById(containerId);
+      if (container) container.classList.add('loaded');
+    };
+  })();
+
+  // Chart.js defaults
+  Chart.defaults.color = '#94a3b8';
+  Chart.defaults.borderColor = '#1e293b';
+  Chart.defaults.font.family = 'Inter, system-ui, sans-serif';
+  Chart.defaults.font.size = window.innerWidth < 640 ? 10 : 11;
+
+  var chartData = ${JSON.stringify(chartData)};
+  var analyticsData = ${JSON.stringify(analytics)};
+  var isMobile = window.innerWidth < 640;
+
+  // Color palette matching Retell AI
+  var colors = {
+    blue: 'rgb(96, 165, 250)',
+    blueAlpha: 'rgba(96, 165, 250, 0.15)',
+    orange: 'rgb(251, 146, 60)',
+    orangeAlpha: 'rgba(251, 146, 60, 0.15)',
+    cyan: 'rgb(34, 211, 238)',
+    cyanAlpha: 'rgba(34, 211, 238, 0.15)',
+    emerald: 'rgb(52, 211, 153)',
+    emeraldAlpha: 'rgba(52, 211, 153, 0.15)',
+    red: 'rgb(248, 113, 113)',
+    redAlpha: 'rgba(248, 113, 113, 0.15)',
+    purple: 'rgb(167, 139, 250)',
+    purpleAlpha: 'rgba(167, 139, 250, 0.15)',
+    pink: 'rgb(244, 114, 182)',
+    yellow: 'rgb(250, 204, 21)',
+    indigo: 'rgb(129, 140, 248)',
+    teal: 'rgb(45, 212, 191)'
+  };
+
+  // Interactive tooltip configuration
+  var interactiveTooltip = {
+    enabled: true,
+    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+    titleColor: '#fff',
+    bodyColor: '#94a3b8',
+    borderColor: 'rgba(148, 163, 184, 0.2)',
+    borderWidth: 1,
+    padding: 12,
+    cornerRadius: 8,
+    displayColors: true,
+    boxPadding: 4,
+    usePointStyle: true,
+    callbacks: {
+      labelTextColor: function() { return '#e2e8f0'; }
+    }
+  };
+
+  // Create stacked bar chart for time series
+  function createStackedBarChart(ctx, datasets, containerId, legendPosition) {
+    var chart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: chartData.labels,
+        datasets: datasets
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: 'index',
+          intersect: false
+        },
+        plugins: {
+          legend: {
+            display: true,
+            position: legendPosition || 'bottom',
+            labels: {
+              padding: isMobile ? 6 : 10,
+              usePointStyle: true,
+              pointStyle: 'circle',
+              font: { size: isMobile ? 8 : 10 },
+              boxWidth: isMobile ? 6 : 8
+            }
+          },
+          tooltip: interactiveTooltip
+        },
+        scales: {
+          x: {
+            stacked: true,
+            grid: { display: false },
+            ticks: { 
+              maxRotation: 0, 
+              autoSkip: true, 
+              maxTicksLimit: isMobile ? 4 : 6,
+              font: { size: isMobile ? 8 : 10 }
+            }
+          },
+          y: {
+            stacked: true,
+            beginAtZero: true,
+            grid: { color: 'rgba(51, 65, 85, 0.3)' },
+            ticks: { font: { size: isMobile ? 8 : 10 } }
+          }
+        },
+        onHover: function(event, elements) {
+          event.native.target.style.cursor = elements.length > 0 ? 'pointer' : 'default';
+        }
+      }
+    });
+    if (containerId) markChartLoaded(containerId);
+    return chart;
+  }
+
+  // Create horizontal bar chart for agents
+  function createHorizontalBarChart(ctx, data, color, containerId, maxValue) {
+    var chart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: chartData.agentLabels,
+        datasets: [{
+          data: data,
+          backgroundColor: color,
+          borderRadius: 4,
+          barThickness: isMobile ? 16 : 20
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        indexAxis: 'y',
+        interaction: {
+          mode: 'index',
+          intersect: false
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            ...interactiveTooltip,
+            callbacks: {
+              label: function(context) {
+                return context.parsed.x.toFixed(1) + '%';
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            beginAtZero: true,
+            max: maxValue || 100,
+            grid: { color: 'rgba(51, 65, 85, 0.3)' },
+            ticks: {
+              font: { size: isMobile ? 8 : 10 },
+              callback: function(value) { return value + '%'; }
+            }
+          },
+          y: {
+            grid: { display: false },
+            ticks: {
+              font: { size: isMobile ? 8 : 10 },
+              callback: function(value, index) {
+                var label = this.getLabelForValue(value);
+                return label.length > 12 ? label.substring(0, 12) + '...' : label;
+              }
+            }
+          }
+        },
+        onHover: function(event, elements) {
+          event.native.target.style.cursor = elements.length > 0 ? 'pointer' : 'default';
+        }
+      }
+    });
+    if (containerId) markChartLoaded(containerId);
+    return chart;
+  }
+
+  // Create area chart for trends
+  function createAreaChart(ctx, data, color, alphaColor, containerId) {
+    var chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: chartData.labels,
+        datasets: [{
+          data: data,
+          borderColor: color,
+          backgroundColor: alphaColor,
+          fill: true,
+          tension: 0.4,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+          pointHoverBackgroundColor: color,
+          pointHoverBorderColor: '#fff',
+          pointHoverBorderWidth: 2,
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: 'index',
+          intersect: false
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: interactiveTooltip
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: {
+              maxRotation: 0,
+              autoSkip: true,
+              maxTicksLimit: isMobile ? 4 : 6,
+              font: { size: isMobile ? 8 : 10 }
+            }
+          },
+          y: {
+            beginAtZero: true,
+            grid: { color: 'rgba(51, 65, 85, 0.3)' },
+            ticks: { font: { size: isMobile ? 8 : 10 } }
+          }
+        },
+        onHover: function(event, elements) {
+          event.native.target.style.cursor = elements.length > 0 ? 'pointer' : 'default';
+        }
+      }
+    });
+    if (containerId) markChartLoaded(containerId);
+    return chart;
+  }
+
+  // Create donut chart
+  function createDonutChart(ctx, labels, data, bgColors, containerId) {
+    var chart = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: labels,
+        datasets: [{
+          data: data,
+          backgroundColor: bgColors,
+          borderWidth: 0,
+          hoverOffset: 8,
+          hoverBorderWidth: 2,
+          hoverBorderColor: '#fff'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '65%',
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: {
+              padding: isMobile ? 8 : 12,
+              usePointStyle: true,
+              pointStyle: 'circle',
+              font: { size: isMobile ? 9 : 10 }
+            }
+          },
+          tooltip: {
+            ...interactiveTooltip,
+            callbacks: {
+              label: function(context) {
+                var total = context.dataset.data.reduce(function(a, b) { return a + b; }, 0);
+                var percentage = total > 0 ? ((context.parsed / total) * 100).toFixed(1) : 0;
+                return context.label + ': ' + context.parsed + ' (' + percentage + '%)';
+              }
+            }
+          }
+        },
+        onHover: function(event, elements) {
+          event.native.target.style.cursor = elements.length > 0 ? 'pointer' : 'default';
+        }
+      }
+    });
+    if (containerId) markChartLoaded(containerId);
+    return chart;
+  }
+
+  // Initialize stacked bar charts
+  setTimeout(function() {
+    // Call Successful Stacked Bar
+    createStackedBarChart(
+      document.getElementById('callSuccessStackedChart'),
+      [
+        { label: 'Successful', data: chartData.successfulByDate, backgroundColor: colors.blue, borderRadius: 2 },
+        { label: 'Unsuccessful', data: chartData.unsuccessfulByDate, backgroundColor: colors.cyan, borderRadius: 2 },
+        { label: 'Unknown', data: chartData.unknownByDate, backgroundColor: colors.purple, borderRadius: 2 }
+      ],
+      'callSuccessStackedContainer'
+    );
+  }, 100);
+
+  setTimeout(function() {
+    // Disconnection Reason Stacked Bar
+    var reasonColors = [colors.blue, colors.cyan, colors.emerald, colors.orange, colors.purple];
+    var reasonDatasets = chartData.topReasons.map(function(reason, idx) {
+      return {
+        label: reason.replace(/_/g, ' '),
+        data: chartData.disconnectionByDate[reason] || [],
+        backgroundColor: reasonColors[idx % reasonColors.length],
+        borderRadius: 2
+      };
+    });
+    if (reasonDatasets.length > 0) {
+      createStackedBarChart(
+        document.getElementById('disconnectionStackedChart'),
+        reasonDatasets,
+        'disconnectionStackedContainer'
+      );
+    } else {
+      markChartLoaded('disconnectionStackedContainer');
+    }
+  }, 150);
+
+  setTimeout(function() {
+    // Sentiment Stacked Bar
+    createStackedBarChart(
+      document.getElementById('sentimentStackedChart'),
+      [
+        { label: 'Negative', data: chartData.negativeByDate, backgroundColor: colors.red, borderRadius: 2 },
+        { label: 'Neutral', data: chartData.neutralByDate, backgroundColor: colors.orange, borderRadius: 2 },
+        { label: 'Positive', data: chartData.positiveByDate, backgroundColor: colors.emerald, borderRadius: 2 }
+      ],
+      'sentimentStackedContainer'
+    );
+  }, 200);
+
+  // Initialize agent horizontal bar charts
+  setTimeout(function() {
+    if (chartData.agentLabels.length > 0) {
+      createHorizontalBarChart(
+        document.getElementById('agentSuccessChart'),
+        chartData.agentSuccess,
+        colors.blue,
+        'agentSuccessContainer'
+      );
+    } else {
+      markChartLoaded('agentSuccessContainer');
+    }
+  }, 250);
+
+  setTimeout(function() {
+    if (chartData.agentLabels.length > 0) {
+      createHorizontalBarChart(
+        document.getElementById('agentPickedUpChart'),
+        chartData.agentPickedUp,
+        colors.blue,
+        'agentPickedUpContainer'
+      );
+    } else {
+      markChartLoaded('agentPickedUpContainer');
+    }
+  }, 300);
+
+  setTimeout(function() {
+    if (chartData.agentLabels.length > 0) {
+      createHorizontalBarChart(
+        document.getElementById('agentTransferChart'),
+        chartData.agentTransfer,
+        colors.blue,
+        'agentTransferContainer'
+      );
+    } else {
+      markChartLoaded('agentTransferContainer');
+    }
+  }, 350);
+
+  // Initialize donut charts
+  setTimeout(function() {
+    createDonutChart(
+      document.getElementById('callSuccessChart'),
+      ['Successful', 'Unsuccessful', 'Unknown'],
+      [analyticsData.successfulCalls, analyticsData.unsuccessfulCalls, analyticsData.unknownCalls],
+      [colors.emerald, colors.red, colors.purple],
+      'callSuccessContainer'
+    );
+  }, 400);
+
+  setTimeout(function() {
+    createDonutChart(
+      document.getElementById('sentimentChart'),
+      ['Positive', 'Negative', 'Neutral'],
+      [analyticsData.positiveSentiment, analyticsData.negativeSentiment, analyticsData.neutralSentiment],
+      [colors.emerald, colors.red, colors.orange],
+      'sentimentContainer'
+    );
+  }, 450);
+
+  setTimeout(function() {
+    createDonutChart(
+      document.getElementById('directionChart'),
+      ['Inbound', 'Outbound'],
+      [analyticsData.inboundCalls, analyticsData.outboundCalls],
+      [colors.blue, colors.orange],
+      'directionContainer'
+    );
+  }, 500);
+
+  // Initialize trend area charts
+  setTimeout(function() {
+    createAreaChart(document.getElementById('pickedUpRateChart'), chartData.pickedUpRate, colors.blue, colors.blueAlpha, 'pickedUpContainer');
+  }, 550);
+
+  setTimeout(function() {
+    createAreaChart(document.getElementById('successRateChart'), chartData.successRate, colors.emerald, colors.emeraldAlpha, 'successRateContainer');
+  }, 600);
+
+  setTimeout(function() {
+    createAreaChart(document.getElementById('transferRateChart'), chartData.transferRate, colors.purple, colors.purpleAlpha, 'transferContainer');
+  }, 650);
+
+  setTimeout(function() {
+    createAreaChart(document.getElementById('voicemailRateChart'), chartData.voicemailRate, colors.orange, colors.orangeAlpha, 'voicemailContainer');
+  }, 700);
+
+  setTimeout(function() {
+    createAreaChart(document.getElementById('avgDurationChart'), chartData.avgDuration, colors.cyan, colors.cyanAlpha, 'avgDurationContainer');
+  }, 750);
+
+  setTimeout(function() {
+    createAreaChart(document.getElementById('avgLatencyChart'), chartData.avgLatency, colors.pink, 'rgba(244, 114, 182, 0.15)', 'avgLatencyContainer');
+  }, 800);
+</script>
+` }) %>
