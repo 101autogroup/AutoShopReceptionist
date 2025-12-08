@@ -103,7 +103,8 @@ router.get('/', requireAuth, async (req, res) => {
             day: 'numeric',
             year: 'numeric',
             hour: '2-digit',
-            minute: '2-digit'
+            minute: '2-digit',
+            timeZone: 'America/Los_Angeles'
           })
         : 'N/A'
     }));
@@ -174,14 +175,16 @@ router.get('/:callId', requireAuth, async (req, res) => {
             year: 'numeric',
             hour: '2-digit',
             minute: '2-digit',
-            second: '2-digit'
+            second: '2-digit',
+            timeZone: 'America/Los_Angeles'
           })
         : 'N/A',
       formattedEndDate: call.end_timestamp 
         ? new Date(call.end_timestamp).toLocaleString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
-            second: '2-digit'
+            second: '2-digit',
+            timeZone: 'America/Los_Angeles'
           })
         : 'N/A'
     };

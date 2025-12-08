@@ -1,4 +1,4 @@
-# AI-Telle - Retell AI Analytics Dashboard
+# AutoShopReceptionist AI - Retell AI Analytics Dashboard
 
 A multi-tenant analytics dashboard for Retell AI voice agents with call recordings, analytics charts, and admin management.
 
