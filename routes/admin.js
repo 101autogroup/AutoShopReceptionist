@@ -3,6 +3,7 @@ const router = express.Router();
 const { requireAdmin } = require('../middleware/admin');
 const retell = require('../services/retell');
 const User = require('../models/User');
+const AgentChangeRequest = require('../models/AgentChangeRequest');
 
 // List all users
 router.get('/users', requireAdmin, async (req, res) => {
@@ -151,6 +152,80 @@ router.post('/users/:userId/delete', requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('Delete user error:', error);
     res.redirect('/admin/users');
+  }
+});
+
+// List pending agent change requests
+router.get('/agent-change-requests', requireAdmin, async (req, res) => {
+  try {
+    const requests = await AgentChangeRequest.find({ status: 'pending' })
+      .sort({ createdAt: -1 })
+      .populate('userId', 'name email role')
+      .lean();
+
+    // Build agent id -> agent name map for display.
+    const allAgents = await retell.listAgents();
+    const agentNameMap = {};
+    allAgents.forEach(a => {
+      agentNameMap[a.agent_id] = a.agent_name || a.agent_id.substring(0, 12);
+    });
+
+    // Rename populated field for cleaner view usage.
+    const mappedRequests = requests.map(r => ({
+      ...r,
+      user: r.userId
+    }));
+
+    res.render('admin/agentChangeRequests/index', {
+      title: 'Agent Change Requests',
+      requests: mappedRequests,
+      agentNameMap
+    });
+  } catch (error) {
+    console.error('Agent change requests error:', error);
+    res.render('admin/agentChangeRequests/index', {
+      title: 'Agent Change Requests',
+      requests: [],
+      agentNameMap: {},
+      error: 'Failed to load requests.'
+    });
+  }
+});
+
+// Complete a pending request (admin action)
+router.post('/agent-change-requests/:requestId/complete', requireAdmin, async (req, res) => {
+  try {
+    const adminId = req.session.user.id;
+
+    const request = await AgentChangeRequest.findById(req.params.requestId);
+    if (!request) {
+      return res.status(404).render('error', {
+        title: 'Request Not Found',
+        message: 'The agent change request does not exist.'
+      });
+    }
+
+    if (request.status !== 'pending') {
+      return res.redirect('/admin/agent-change-requests');
+    }
+
+    // Update the target user's assigned agents.
+    await User.findByIdAndUpdate(request.userId, {
+      $set: {
+        assignedAgentIds: [request.requestedAgentId]
+      }
+    });
+
+    // Mark request as completed.
+    request.status = 'completed';
+    request.completedAt = new Date();
+    request.completedBy = adminId;
+    await request.save();
+
+    return res.redirect('/admin/agent-change-requests');
+  } catch (error) {
+    console.error('Complete agent change request error:', error);
+    return res.redirect('/admin/agent-change-requests');
   }
 });
 

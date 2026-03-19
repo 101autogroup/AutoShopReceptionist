@@ -10,6 +10,7 @@ const authRoutes = require('./routes/auth');
 const dashboardRoutes = require('./routes/dashboard');
 const callsRoutes = require('./routes/calls');
 const agentsRoutes = require('./routes/agents');
+const agentChangeRequestsRoutes = require('./routes/agentChangeRequests');
 const adminRoutes = require('./routes/admin');
 
 const app = express();
@@ -58,6 +59,7 @@ app.use('/', authRoutes);
 app.use('/dashboard', dashboardRoutes);
 app.use('/calls', callsRoutes);
 app.use('/agents', agentsRoutes);
+app.use('/agent-change-requests', agentChangeRequestsRoutes);
 app.use('/admin', adminRoutes);
 
 // Home redirect

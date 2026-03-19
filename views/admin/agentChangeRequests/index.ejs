@@ -1,0 +1,72 @@
+<%- include('../../layouts/main', { body: `
+<div class="space-y-6">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-surface-50">Agent Change Requests</h1>
+      <p class="text-surface-400 mt-1">Pending requests waiting for admin completion.</p>
+    </div>
+    <a href="/admin/users" class="btn btn-secondary">Back to Users</a>
+  </div>
+
+  <div class="table-container">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Requested Agent</th>
+          <th>Reason</th>
+          <th>Created</th>
+          <th class="text-right">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${requests.length === 0 ? `
+          <tr>
+            <td colspan="5" class="text-center py-12 text-surface-400">
+              No pending requests.
+            </td>
+          </tr>
+        ` : requests.map(r => `
+          <tr>
+            <td>
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-brand-600/20 flex items-center justify-center text-brand-400 font-medium">
+                  ${r.user?.name ? r.user.name.charAt(0).toUpperCase() : '?'}
+                </div>
+                <div>
+                  <div class="font-medium text-surface-100">${r.user?.name || 'Unknown user'}</div>
+                  <div class="text-sm text-surface-400">${r.user?.email || ''}</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div class="text-surface-200 font-medium">
+                ${agentNameMap && agentNameMap[r.requestedAgentId] ? agentNameMap[r.requestedAgentId] : r.requestedAgentId}
+              </div>
+              <div class="text-xs text-surface-500 font-mono mt-1">${r.requestedAgentId}</div>
+            </td>
+            <td class="text-surface-400 max-w-[360px]">
+              ${r.reason ? r.reason.substring(0, 80) + (r.reason.length > 80 ? '...' : '') : '-'}
+            </td>
+            <td class="text-surface-400">
+              ${r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-'}
+            </td>
+            <td>
+              <form action="/admin/agent-change-requests/${r._id}/complete" method="POST" class="inline"
+                onsubmit="return confirm('Mark this request as completed and update the user agent assignment?')">
+                <button type="submit" class="btn btn-primary text-sm py-1.5 px-3">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                  Complete
+                </button>
+              </form>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+</div>
+` }) %>
+
