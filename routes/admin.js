@@ -5,6 +5,14 @@ const retell = require('../services/retell');
 const User = require('../models/User');
 const AgentChangeRequest = require('../models/AgentChangeRequest');
 
+function escapeHtmlText(s) {
+  if (s == null || s === '') return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 // List all users
 router.get('/users', requireAdmin, async (req, res) => {
   try {
@@ -177,11 +185,21 @@ router.get('/agent-change-requests', requireAdmin, async (req, res) => {
       agentNameMap[a.agent_id] = a.agent_name || a.agent_id.substring(0, 12);
     });
 
-    const mappedRequests = requests.map(r => ({
-      ...r,
-      user: r.userId,
-      completedByUser: r.completedBy
-    }));
+    const NOTE_PREVIEW_LEN = 120;
+    const mappedRequests = requests.map(r => {
+      const rawReason = r.reason || '';
+      const long = rawReason.length > NOTE_PREVIEW_LEN;
+      return {
+        ...r,
+        user: r.userId,
+        completedByUser: r.completedBy,
+        reasonEscaped: escapeHtmlText(rawReason),
+        reasonPreviewEscaped: escapeHtmlText(
+          long ? `${rawReason.slice(0, NOTE_PREVIEW_LEN)}…` : rawReason
+        ),
+        reasonIsLong: long
+      };
+    });
 
     res.render('admin/agentChangeRequests/index', {
       title: 'Agent Change Requests',

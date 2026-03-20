@@ -60,8 +60,19 @@
               </div>
               <div class="text-xs text-surface-500 font-mono mt-1 break-all">${r.requestedAgentId}</div>
             </td>
-            <td class="text-surface-400 max-w-[220px]">
-              ${r.reason ? r.reason.substring(0, 120) + (r.reason.length > 120 ? '...' : '') : '—'}
+            <td class="align-top text-surface-400 min-w-[200px] max-w-md">
+              ${!r.reason ? '—' : `
+              <details class="admin-note-details">
+                <summary class="cursor-pointer list-none select-none rounded-lg border border-surface-700/50 bg-surface-800/30 px-3 py-2 hover:border-surface-600/50 hover:bg-surface-800/50 transition-colors">
+                  <span class="text-surface-300 text-sm break-words">${r.reasonPreviewEscaped}</span>
+                  <span class="admin-note-hint-expand block text-xs text-brand-400 mt-1 font-medium">Click to expand full note</span>
+                  <span class="admin-note-hint-collapse block text-xs text-brand-400 mt-1 font-medium">Click to collapse</span>
+                </summary>
+                <div class="mt-2 rounded-lg border border-surface-700/50 bg-surface-900/80 p-3 text-surface-200 text-sm whitespace-pre-wrap break-words max-h-80 overflow-y-auto shadow-inner">
+                  ${r.reasonEscaped}
+                </div>
+              </details>
+              `}
             </td>
             <td class="text-surface-400 whitespace-nowrap text-xs">
               ${r.createdAt ? new Date(r.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
@@ -96,4 +107,12 @@
     </table>
   </div>
 </div>
+
+<style>
+  .admin-note-details > summary { list-style: none; }
+  .admin-note-details > summary::-webkit-details-marker { display: none; }
+  .admin-note-details .admin-note-hint-collapse { display: none; }
+  .admin-note-details[open] .admin-note-hint-expand { display: none; }
+  .admin-note-details[open] .admin-note-hint-collapse { display: block; }
+</style>
 ` }) %>
