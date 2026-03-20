@@ -155,31 +155,39 @@ router.post('/users/:userId/delete', requireAdmin, async (req, res) => {
   }
 });
 
-// List pending agent change requests
+// List all agent change requests (support ticket history: pending + completed)
 router.get('/agent-change-requests', requireAdmin, async (req, res) => {
   try {
-    const requests = await AgentChangeRequest.find({ status: 'pending' })
+    const requests = await AgentChangeRequest.find({})
       .sort({ createdAt: -1 })
       .populate('userId', 'name email role')
+      .populate('completedBy', 'name email')
       .lean();
 
-    // Build agent id -> agent name map for display.
+    // Pending first, then newest first within each group
+    requests.sort((a, b) => {
+      if (a.status === 'pending' && b.status !== 'pending') return -1;
+      if (a.status !== 'pending' && b.status === 'pending') return 1;
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+
     const allAgents = await retell.listAgents();
     const agentNameMap = {};
     allAgents.forEach(a => {
       agentNameMap[a.agent_id] = a.agent_name || a.agent_id.substring(0, 12);
     });
 
-    // Rename populated field for cleaner view usage.
     const mappedRequests = requests.map(r => ({
       ...r,
-      user: r.userId
+      user: r.userId,
+      completedByUser: r.completedBy
     }));
 
     res.render('admin/agentChangeRequests/index', {
       title: 'Agent Change Requests',
       requests: mappedRequests,
-      agentNameMap
+      agentNameMap,
+      error: null
     });
   } catch (error) {
     console.error('Agent change requests error:', error);

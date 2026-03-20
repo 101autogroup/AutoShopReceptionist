@@ -20,10 +20,6 @@ const agentChangeRequestSchema = new mongoose.Schema({
     enum: ['pending', 'completed'],
     default: 'pending'
   },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
   completedAt: {
     type: Date
   },
@@ -31,6 +27,8 @@ const agentChangeRequestSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }
+}, {
+  timestamps: true
 });
 
 module.exports = mongoose.model('AgentChangeRequest', agentChangeRequestSchema);
