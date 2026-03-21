@@ -42,13 +42,16 @@ router.get('/users', requireAdmin, async (req, res) => {
     
     res.render('admin/users', {
       title: 'User Management',
-      users: enrichedUsers
+      users: enrichedUsers,
+      passwordUpdated: req.query.pw === '1',
+      error: null
     });
   } catch (error) {
     console.error('Admin users error:', error);
     res.render('admin/users', {
       title: 'User Management',
       users: [],
+      passwordUpdated: false,
       error: 'Failed to load users.'
     });
   }
@@ -115,6 +118,76 @@ router.post('/users/:userId/assign', requireAdmin, async (req, res) => {
       title: 'Error',
       message: 'Failed to save agent assignments.'
     });
+  }
+});
+
+// Set / reset user password (admin)
+router.get('/users/:userId/password', requireAdmin, async (req, res) => {
+  try {
+    const targetUser = await User.findById(req.params.userId);
+    if (!targetUser) {
+      return res.status(404).render('error', {
+        title: 'User Not Found',
+        message: 'The user you are looking for does not exist.'
+      });
+    }
+
+    res.render('admin/set-password', {
+      title: 'Set password',
+      targetUser: targetUser.toObject(),
+      error: null
+    });
+  } catch (error) {
+    console.error('Admin set password page error:', error);
+    res.redirect('/admin/users');
+  }
+});
+
+router.post('/users/:userId/password', requireAdmin, async (req, res) => {
+  try {
+    const targetUser = await User.findById(req.params.userId);
+    if (!targetUser) {
+      return res.status(404).render('error', {
+        title: 'User Not Found',
+        message: 'The user you are looking for does not exist.'
+      });
+    }
+
+    const newPassword = (req.body.newPassword || '').trim();
+    const confirmPassword = (req.body.confirmPassword || '').trim();
+
+    if (!newPassword || newPassword.length < 8) {
+      return res.render('admin/set-password', {
+        title: 'Set password',
+        targetUser: targetUser.toObject(),
+        error: 'Password must be at least 8 characters.'
+      });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.render('admin/set-password', {
+        title: 'Set password',
+        targetUser: targetUser.toObject(),
+        error: 'Passwords do not match.'
+      });
+    }
+
+    // Assign plaintext; User pre-save hook hashes passwordHash
+    targetUser.passwordHash = newPassword;
+    await targetUser.save();
+
+    return res.redirect('/admin/users?pw=1');
+  } catch (error) {
+    console.error('Admin set password error:', error);
+    const targetUser = await User.findById(req.params.userId);
+    if (targetUser) {
+      return res.render('admin/set-password', {
+        title: 'Set password',
+        targetUser: targetUser.toObject(),
+        error: 'Failed to update password. Please try again.'
+      });
+    }
+    return res.redirect('/admin/users');
   }
 });
 
