@@ -6,28 +6,62 @@ const client = new Retell({
 });
 
 /**
+ * Small in-process TTL cache.
+ *
+ * The Retell API is by far the slowest thing this app touches. The dashboard
+ * used to re-download the whole call history on every single page view, so
+ * caching the result for a few minutes removes almost all of that cost for
+ * repeat views and for several users looking at the same agents.
+ */
+const CACHE_TTL_MS = Number(process.env.RETELL_CACHE_TTL_MS || 5 * 60 * 1000);
+const cacheStore = new Map();
+
+function cacheGet(cacheKey) {
+  const entry = cacheStore.get(cacheKey);
+  if (!entry) return null;
+  if (Date.now() - entry.storedAt > CACHE_TTL_MS) {
+    cacheStore.delete(cacheKey);
+    return null;
+  }
+  return entry.value;
+}
+
+function cacheSet(cacheKey, value) {
+  if (cacheStore.size > 40) cacheStore.clear();
+  cacheStore.set(cacheKey, { storedAt: Date.now(), value });
+  return value;
+}
+
+function clearCache() {
+  cacheStore.clear();
+}
+
+/**
  * Get all agents from Retell
  * Note: The API returns agent version history (same agent appears multiple times)
  * This function deduplicates by agent_id, keeping the most recently modified version
  */
 async function listAgents() {
   try {
+    const cachedAgents = cacheGet('agents');
+    if (cachedAgents) return cachedAgents;
+
     const allAgents = await client.agent.list();
-    
+
     // Deduplicate by agent_id - API returns version history
     // Keep the first occurrence (most recent) since results are sorted by last_modification_timestamp desc
     const uniqueAgentsMap = new Map();
-    
+
     for (const agent of allAgents) {
       if (!uniqueAgentsMap.has(agent.agent_id)) {
         uniqueAgentsMap.set(agent.agent_id, agent);
       }
     }
-    
+
     const uniqueAgents = Array.from(uniqueAgentsMap.values());
     console.log(`Fetched ${allAgents.length} agent versions, ${uniqueAgents.length} unique agents`);
-    
-    return uniqueAgents;
+
+    return cacheSet('agents', uniqueAgents);
   } catch (error) {
     console.error('Error listing agents:', error);
     throw error;
@@ -48,74 +82,110 @@ async function getAgent(agentId) {
 }
 
 /**
- * List calls with optional filters - FETCHES ALL with pagination
+ * Drop the heavyweight fields we never use in list or aggregate views.
+ *
+ * A raw Retell call object carries the full transcript plus the generated
+ * summary. Multiplied by thousands of calls that is tens of megabytes held in
+ * memory to produce numbers that only need timestamps and a few flags.
+ */
+function slimCall(call) {
+  const slim = Object.assign({}, call);
+  delete slim.transcript;
+  delete slim.transcript_object;
+  delete slim.transcript_with_tool_calls;
+  delete slim.scrubbed_transcript_with_tool_calls;
+  delete slim.llm_token_usage;
+
+  if (slim.call_analysis) {
+    slim.call_analysis = Object.assign({}, slim.call_analysis);
+    delete slim.call_analysis.call_summary;
+  }
+
+  return slim;
+}
+
+/**
+ * List calls with optional filters.
+ *
+ * Two things matter here:
+ *  - filters go into filter_criteria so Retell narrows the result set server
+ *    side. retell-sdk v4 expects start_timestamp as a threshold object; the
+ *    flat after_start_timestamp / before_start_timestamp fields are silently
+ *    ignored, which is why every date range used to return the whole history.
+ *  - paging uses pagination_key, which is the call id of the last row of the
+ *    previous page and is exclusive of that row.
  */
 async function listCalls(options = {}) {
   try {
     const filterCriteria = {};
-    
+
     if (options.agentIds && options.agentIds.length > 0) {
       filterCriteria.agent_id = options.agentIds;
     }
-    
+
+    const startTimestamp = {};
     if (options.afterTimestamp) {
-      filterCriteria.after_start_timestamp = options.afterTimestamp;
+      startTimestamp.lower_threshold = Math.round(options.afterTimestamp);
     }
-    
     if (options.beforeTimestamp) {
-      filterCriteria.before_start_timestamp = options.beforeTimestamp;
+      startTimestamp.upper_threshold = Math.round(options.beforeTimestamp);
+    }
+    if (Object.keys(startTimestamp).length > 0) {
+      filterCriteria.start_timestamp = startTimestamp;
     }
 
-    // Fetch ALL calls using pagination
-    let allCalls = [];
+    const cacheKey = 'calls:' + JSON.stringify(filterCriteria);
+    const cachedCalls = cacheGet(cacheKey);
+    if (cachedCalls) {
+      console.log(`Serving ${cachedCalls.length} calls from cache`);
+      return cachedCalls;
+    }
+
+    const batchSize = 1000; // API maximum per request
+    const maxCalls = options.maxCalls || 30000;
+    const allCalls = [];
+    let paginationKey = null;
     let hasMore = true;
-    let lastTimestamp = null;
-    const batchSize = 1000; // Max per request
-    
+
     while (hasMore) {
       const params = {
         sort_order: 'descending',
         limit: batchSize
       };
-      
+
       if (Object.keys(filterCriteria).length > 0) {
-        params.filter_criteria = { ...filterCriteria };
+        params.filter_criteria = filterCriteria;
       }
-      
-      // For pagination: fetch calls older than the last one we got
-      if (lastTimestamp) {
-        params.filter_criteria = params.filter_criteria || {};
-        params.filter_criteria.before_start_timestamp = lastTimestamp;
+
+      if (paginationKey) {
+        params.pagination_key = paginationKey;
       }
-      
+
       const batch = await client.call.list(params);
-      
-      if (batch.length === 0) {
+
+      if (!batch || batch.length === 0) {
         hasMore = false;
-      } else {
-        allCalls = allCalls.concat(batch);
-        
-        // Get the oldest timestamp from this batch for next pagination
-        const oldestCall = batch[batch.length - 1];
-        if (oldestCall && oldestCall.start_timestamp) {
-          lastTimestamp = oldestCall.start_timestamp;
-        }
-        
-        // If we got less than batchSize, we've reached the end
-        if (batch.length < batchSize) {
-          hasMore = false;
-        }
-        
-        // Safety limit to prevent infinite loops (max 10 pages = 10,000 calls)
-        if (allCalls.length >= 10000) {
-          console.log('Reached safety limit of 10,000 calls');
-          hasMore = false;
-        }
+        break;
+      }
+
+      for (const call of batch) {
+        allCalls.push(slimCall(call));
+      }
+
+      paginationKey = batch[batch.length - 1].call_id;
+
+      if (batch.length < batchSize || !paginationKey) {
+        hasMore = false;
+      }
+
+      if (allCalls.length >= maxCalls) {
+        console.log(`Reached safety limit of ${maxCalls} calls`);
+        hasMore = false;
       }
     }
-    
+
     console.log(`Fetched ${allCalls.length} total calls`);
-    return allCalls;
+    return cacheSet(cacheKey, allCalls);
   } catch (error) {
     console.error('Error listing calls:', error);
     throw error;
@@ -346,6 +416,7 @@ function formatDuration(seconds) {
 
 module.exports = {
   listAgents,
+  clearCache,
   getAgent,
   listCalls,
   getCall,
