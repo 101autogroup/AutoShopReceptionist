@@ -18,8 +18,10 @@ router.get('/', requireAuth, async (req, res) => {
     const user = await User.findById(req.session.user.id);
     const agentIds = user.assignedAgentIds || [];
     
-    // Get time range from query params (default to 'all')
-    let timeRange = req.query.range || 'all';
+    // Get time range from query params. Defaults to the last 30 days -
+    // loading the entire account history on every page view is what made this
+    // page take the better part of a minute to render.
+    let timeRange = req.query.range || '30d';
     const customStart = req.query.startDate;
     const customEnd = req.query.endDate;
     const agentFilter = req.query.agent || '';
@@ -52,37 +54,49 @@ router.get('/', requireAuth, async (req, res) => {
     let agents = [];
     
     if (agentIds.length > 0 || user.role === 'admin') {
-      const callOptions = {
-        limit: 1000
-      };
-      
+      // Work out which agents this request is allowed to touch before we ask
+      // Retell for anything. An admin may look at any agent; everyone else is
+      // limited to their assigned agents, and a requested ?agent= value is only
+      // honoured when it is one of theirs.
+      let scopedAgentIds = null;
+
+      if (user.role === 'admin') {
+        if (agentFilter) {
+          scopedAgentIds = [agentFilter];
+        }
+      } else if (agentFilter && agentIds.includes(agentFilter)) {
+        scopedAgentIds = [agentFilter];
+      } else {
+        scopedAgentIds = agentIds;
+      }
+
+      const callOptions = {};
+
+      if (scopedAgentIds && scopedAgentIds.length > 0) {
+        callOptions.agentIds = scopedAgentIds;
+      }
+
       // Apply date filters if set
       if (startDate) {
         callOptions.afterTimestamp = startDate.getTime();
       }
       callOptions.beforeTimestamp = endDate.getTime();
-      
-      // Admin sees all calls, users see only their assigned agents
+
+      // Calls and agents are independent lookups, so run them together
+      const [fetchedCalls, allAgents] = await Promise.all([
+        retell.listCalls(callOptions),
+        retell.listAgents()
+      ]);
+
+      calls = fetchedCalls;
+
+      // Belt and braces: never let another tenant's calls through
       if (user.role !== 'admin' && agentIds.length > 0) {
-        callOptions.agentIds = agentIds;
-      }
-      
-      // Agent filter
-      if (agentFilter) {
-        callOptions.agentIds = [agentFilter];
-      }
-      
-      calls = await retell.listCalls(callOptions);
-      
-      // Filter by assigned agents for non-admin if agent filter not set
-      if (user.role !== 'admin' && agentIds.length > 0 && !agentFilter) {
         calls = calls.filter(c => agentIds.includes(c.agent_id));
       }
-      
-      // Fetch all agents to map names
-      const allAgents = await retell.listAgents();
-      agents = user.role === 'admin' 
-        ? allAgents 
+
+      agents = user.role === 'admin'
+        ? allAgents
         : allAgents.filter(a => agentIds.includes(a.agent_id));
     }
 
