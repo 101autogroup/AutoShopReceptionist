@@ -1,0 +1,128 @@
+<%- include('../layouts/main', { body: `
+<div class="space-y-6">
+  <a href="/admin/users" class="inline-flex items-center gap-2 text-surface-400 hover:text-surface-200 transition-colors">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+    </svg>
+    Back to Users
+  </a>
+
+  <div>
+    <h1 class="text-2xl font-bold text-surface-50">Add User</h1>
+    <p class="text-surface-400 mt-1">Create an account directly and choose which agents it can see.</p>
+  </div>
+
+  ${typeof error !== 'undefined' && error ? `
+  <div class="p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+    <p class="text-sm text-amber-400">${error}</p>
+  </div>
+  ` : ''}
+
+  <form action="/admin/users/new" method="POST" class="space-y-6">
+    <div class="card max-w-lg space-y-5">
+      <div>
+        <label for="name" class="label">Full name</label>
+        <input
+          type="text"
+          id="name"
+          name="name"
+          class="input"
+          required
+          value="${form.name}"
+          placeholder="Jane Smith"
+        >
+      </div>
+      <div>
+        <label for="email" class="label">Email</label>
+        <input
+          type="email"
+          id="email"
+          name="email"
+          class="input"
+          required
+          value="${form.email}"
+          autocomplete="off"
+          placeholder="jane@example.com"
+        >
+      </div>
+      <div>
+        <label for="password" class="label">Password</label>
+        <input
+          type="password"
+          id="password"
+          name="password"
+          class="input"
+          required
+          minlength="8"
+          autocomplete="new-password"
+          placeholder="At least 8 characters"
+        >
+      </div>
+      <div>
+        <label for="confirmPassword" class="label">Confirm password</label>
+        <input
+          type="password"
+          id="confirmPassword"
+          name="confirmPassword"
+          class="input"
+          required
+          minlength="8"
+          autocomplete="new-password"
+          placeholder="Re-enter the password"
+        >
+      </div>
+      <div>
+        <label for="role" class="label">Role</label>
+        <select id="role" name="role" class="input">
+          <option value="user" ${form.role === 'admin' ? '' : 'selected'}>User - only sees assigned agents</option>
+          <option value="admin" ${form.role === 'admin' ? 'selected' : ''}>Admin - full access to everything</option>
+        </select>
+      </div>
+      <p class="text-xs text-surface-500">
+        The user can sign in with this password right away. Share it with them securely.
+      </p>
+    </div>
+
+    <div class="card">
+      <h3 class="text-lg font-semibold text-surface-100 mb-4">Assign Agents</h3>
+
+      ${agents.length === 0 ? `
+      <p class="text-sm text-surface-400">
+        No agents are available right now. You can assign agents later from the Users list.
+      </p>
+      ` : `
+      <div class="space-y-3 max-h-96 overflow-y-auto">
+        ${agents.map(agent => `
+        <label class="flex items-start gap-4 p-4 rounded-lg border border-surface-700 hover:border-surface-600 cursor-pointer transition-colors">
+          <input
+            type="checkbox"
+            name="agents"
+            value="${agent.agent_id}"
+            ${(form.agentIds || []).includes(agent.agent_id) ? 'checked' : ''}
+            class="mt-1 w-5 h-5 rounded border-surface-600 bg-surface-800 text-brand-600 focus:ring-brand-500 focus:ring-offset-surface-900"
+          >
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="font-medium text-surface-100 truncate">${agent.agent_name || 'Unnamed Agent'}</span>
+              ${agent.is_published ? '<span class="badge badge-success text-xs">Published</span>' : ''}
+            </div>
+            <p class="text-xs text-surface-500 mt-1 truncate">${agent.agent_id}</p>
+          </div>
+        </label>
+        `).join('')}
+      </div>
+      `}
+    </div>
+
+    <div class="flex items-center gap-4">
+      <button type="submit" class="btn btn-primary">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+        </svg>
+        Create user
+      </button>
+      <a href="/admin/users" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+` }) %>

@@ -44,6 +44,7 @@ router.get('/users', requireAdmin, async (req, res) => {
       title: 'User Management',
       users: enrichedUsers,
       passwordUpdated: req.query.pw === '1',
+      userCreated: req.query.created === '1',
       error: null
     });
   } catch (error) {
@@ -52,8 +53,107 @@ router.get('/users', requireAdmin, async (req, res) => {
       title: 'User Management',
       users: [],
       passwordUpdated: false,
+      userCreated: false,
       error: 'Failed to load users.'
     });
+  }
+});
+
+// Escape a value for safe use inside an HTML attribute
+function escapeAttr(s) {
+  return escapeHtmlText(s)
+    .split('"').join('&quot;')
+    .split("'").join('&#39;');
+}
+
+async function renderNewUserForm(res, form, error) {
+  let agents = [];
+  try {
+    agents = await retell.listAgents();
+  } catch (e) {
+    console.error('Failed to load agents for the new user form:', e);
+  }
+
+  return res.render('admin/new-user', {
+    title: 'Add User',
+    agents,
+    form: {
+      name: escapeAttr(form.name || ''),
+      email: escapeAttr(form.email || ''),
+      role: form.role === 'admin' ? 'admin' : 'user',
+      agentIds: form.agentIds || []
+    },
+    error: error || null
+  });
+}
+
+// Show the "add user" form (admin creates the account directly)
+router.get('/users/new', requireAdmin, async (req, res) => {
+  try {
+    return await renderNewUserForm(res, { name: '', email: '', role: 'user', agentIds: [] }, null);
+  } catch (error) {
+    console.error('New user form error:', error);
+    return res.redirect('/admin/users');
+  }
+});
+
+// Create the user
+router.post('/users/new', requireAdmin, async (req, res) => {
+  const name = (req.body.name || '').trim();
+  const email = (req.body.email || '').trim().toLowerCase();
+  const password = (req.body.password || '').trim();
+  const confirmPassword = (req.body.confirmPassword || '').trim();
+  const role = req.body.role === 'admin' ? 'admin' : 'user';
+
+  let agentIds = req.body.agents || [];
+  if (!Array.isArray(agentIds)) {
+    agentIds = [agentIds];
+  }
+
+  const form = { name, email, role, agentIds };
+
+  try {
+    if (!name || !email || !password || !confirmPassword) {
+      return await renderNewUserForm(res, form, 'Name, email and password are all required.');
+    }
+
+    if (email.indexOf('@') < 1 || email.indexOf('.') < 0) {
+      return await renderNewUserForm(res, form, 'Please enter a valid email address.');
+    }
+
+    if (password.length < 8) {
+      return await renderNewUserForm(res, form, 'Password must be at least 8 characters.');
+    }
+
+    if (password !== confirmPassword) {
+      return await renderNewUserForm(res, form, 'Passwords do not match.');
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return await renderNewUserForm(res, form, 'A user with that email already exists.');
+    }
+
+    // Plaintext is assigned here on purpose; the User pre-save hook hashes it.
+    const newUser = new User({
+      name,
+      email,
+      passwordHash: password,
+      role,
+      assignedAgentIds: agentIds
+    });
+
+    await newUser.save();
+
+    return res.redirect('/admin/users?created=1');
+  } catch (error) {
+    console.error('Admin create user error:', error);
+    const duplicate = error && (error.code === 11000 || error.code === '11000');
+    return renderNewUserForm(
+      res,
+      form,
+      duplicate ? 'A user with that email already exists.' : 'Failed to create the user. Please try again.'
+    );
   }
 });
 
