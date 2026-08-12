@@ -3,7 +3,7 @@ const express = require('express');
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
 const path = require('path');
-const connectDB = require('./config/db');
+const { connectDB, getClientPromise } = require('./config/db');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -15,8 +15,16 @@ const adminRoutes = require('./routes/admin');
 
 const app = express();
 
-// Connect to MongoDB
-connectDB();
+// A rejected promise must not take the process down with it. The Mongo driver
+// rejects in the background during an outage, and an unhandled rejection is
+// fatal in Node 16+.
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection:', reason instanceof Error ? reason.message : reason);
+});
+
+// Warm the connection at boot. Failures are logged inside connectDB; the
+// readiness gate below decides how a request behaves while the DB is down.
+connectDB().catch(() => {});
 
 // Trust proxy - required for Render and other hosting platforms
 app.set('trust proxy', 1);
@@ -30,15 +38,48 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Health check - must not touch the database, so uptime monitoring can tell
+// an app outage apart from a database outage.
+app.get('/healthz', (req, res) => {
+  const { isConnected } = require('./config/db');
+  res.status(200).json({ ok: true, db: isConnected() ? 'connected' : 'disconnected' });
+});
+
+/**
+ * Readiness gate.
+ *
+ * Everything past this point needs Mongo: the session store reads from it on
+ * every request. If it is unreachable we answer 503 and let the caller retry,
+ * rather than letting the session middleware throw or the process die. Static
+ * assets are already served above, so they keep working during an outage.
+ */
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    res.status(503)
+    .set('Retry-After', '10')
+    .type('html')
+    .send('<!doctype html><title>Temporarily unavailable</title><h1>Temporarily unavailable</h1><p>We cannot reach the database right now. Please retry in a few seconds.</p>');
+  }
+});
+
 // Session configuration
+const sessionStore = MongoStore.create({
+  clientPromise: getClientPromise(),
+  ttl: 24 * 60 * 60 // 1 day
+});
+// Without a listener, a store error surfaces as an unhandled rejection.
+sessionStore.on('error', (err) => {
+  console.error('Session store error:', err.message);
+});
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'fallback-secret-key',
   resave: false,
   saveUninitialized: false,
-  store: MongoStore.create({
-    mongoUrl: process.env.MONGODB_URI || 'mongodb://localhost:27017/ai-telle',
-    ttl: 24 * 60 * 60 // 1 day
-  }),
+  store: sessionStore,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
@@ -84,8 +125,8 @@ app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).render('error', {
     title: 'Server Error',
-    message: process.env.NODE_ENV === 'production' 
-      ? 'Something went wrong.' 
+    message: process.env.NODE_ENV === 'production'
+    ? 'Something went wrong.'
       : err.message
   });
 });
@@ -94,4 +135,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
-
