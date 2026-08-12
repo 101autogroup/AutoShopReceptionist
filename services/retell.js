@@ -37,31 +37,100 @@ function clearCache() {
 }
 
 /**
- * Get all agents from Retell
- * Note: The API returns agent version history (same agent appears multiple times)
- * This function deduplicates by agent_id, keeping the most recently modified version
+ * Page size used when walking the agent list endpoint.
+ */
+const AGENT_PAGE_LIMIT = 1000;
+
+/**
+ * How many agent detail requests to run at once when hydrating the list.
+ */
+const AGENT_HYDRATE_CONCURRENCY = 5;
+
+/**
+ * List every voice agent via POST /v2/list-agents.
+ *
+ * The old GET /list-agents endpoint was deprecated on 07/31/2026 and returns
+ * version history rather than unique agents. The v2 endpoint already returns
+ * one row per agent, so no de-duplication is needed here; it pages instead,
+ * so keep following pagination_key while has_more is true.
+ *
+ * retell-sdk v4 has no typed wrapper for this route yet, so the request goes
+ * through the client's generic POST helper.
+ */
+async function listAgentSummaries() {
+  const summaries = [];
+  let paginationKey;
+
+  // Bounded loop: a runaway pagination_key should never spin forever.
+  for (let page = 0; page < 50; page++) {
+    const response = await client.post('/v2/list-agents', {
+      query: {
+        limit: AGENT_PAGE_LIMIT,
+        ...(paginationKey ? { pagination_key: paginationKey } : {})
+      },
+      body: {
+        filter_criteria: {
+          channel: { type: 'string', op: 'eq', value: 'voice' }
+        }
+      }
+    });
+
+    summaries.push(...(response?.items || []));
+
+    if (!response?.has_more || !response?.pagination_key) break;
+    paginationKey = response.pagination_key;
+  }
+
+  return summaries;
+}
+
+/**
+ * Fetch full agent records for a set of summaries.
+ *
+ * The v2 list response is intentionally slim (id, name, channel, tags,
+ * timestamp). The agents list and the admin assign screen also show voice,
+ * language and response engine, so hydrate each row from GET /get-agent. This
+ * only runs on a cache miss, and a failed detail lookup degrades to the slim
+ * record instead of taking the whole page down.
+ */
+async function hydrateAgents(summaries) {
+  const hydrated = [];
+
+  for (let i = 0; i < summaries.length; i += AGENT_HYDRATE_CONCURRENCY) {
+    const batch = summaries.slice(i, i + AGENT_HYDRATE_CONCURRENCY);
+
+    const results = await Promise.all(
+      batch.map(async summary => {
+        try {
+          const detail = await client.agent.retrieve(summary.agent_id);
+          return { ...summary, ...detail };
+        } catch (error) {
+          console.error(`Error hydrating agent ${summary.agent_id}:`, error.message);
+          return summary;
+        }
+      })
+    );
+
+    hydrated.push(...results);
+  }
+
+  return hydrated;
+}
+
+/**
+ * Get all agents from Retell, with the detail fields the UI renders.
  */
 async function listAgents() {
   try {
     const cachedAgents = cacheGet('agents');
     if (cachedAgents) return cachedAgents;
 
-    const allAgents = await client.agent.list();
+    const summaries = await listAgentSummaries();
+    const agents = await hydrateAgents(summaries);
 
-    // Deduplicate by agent_id - API returns version history
-    // Keep the first occurrence (most recent) since results are sorted by last_modification_timestamp desc
-    const uniqueAgentsMap = new Map();
+    console.log(`Fetched ${agents.length} unique agents`);
 
-    for (const agent of allAgents) {
-      if (!uniqueAgentsMap.has(agent.agent_id)) {
-        uniqueAgentsMap.set(agent.agent_id, agent);
-      }
-    }
-
-    const uniqueAgents = Array.from(uniqueAgentsMap.values());
-    console.log(`Fetched ${allAgents.length} agent versions, ${uniqueAgents.length} unique agents`);
-
-    return cacheSet('agents', uniqueAgents);
+    return cacheSet('agents', agents);
   } catch (error) {
     console.error('Error listing agents:', error);
     throw error;
