@@ -5,15 +5,15 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/ai-tel
 /**
  * Connection options tuned for serverless.
  *
- * The mongoose defaults assume a long-lived server. On Vercel each cold start
- * opens a fresh connection and the instance can be frozen mid-handshake, so
- * keep the timeouts short enough that a request fails fast instead of hanging,
- * and keep the pool small so a burst of cold starts cannot exhaust the Atlas
- * connection limit (the default maxPoolSize is 100 *per instance*).
+ * Keep the pool small: the default maxPoolSize is 100 *per instance*, and a
+ * burst of cold starts can otherwise exhaust the Atlas connection limit.
+ *
+ * Timeouts are per attempt, not per request - connectWithRetry below makes
+ * several attempts, so an individual one can afford to give up early.
  */
 const OPTIONS = {
-  serverSelectionTimeoutMS: 10000,
-  connectTimeoutMS: 10000,
+  serverSelectionTimeoutMS: 8000,
+  connectTimeoutMS: 8000,
   socketTimeoutMS: 45000,
   maxPoolSize: 10,
   minPoolSize: 0,
@@ -21,72 +21,106 @@ const OPTIONS = {
 };
 
 /**
+ * How many fresh connection attempts a single request will make before giving
+ * up, and the base backoff between them (400ms, then 800ms).
+ *
+ * Retrying matters because of how Vercel suspends instances. An instance can be
+ * frozen mid-handshake and thawed minutes later holding a dead connection; the
+ * production logs showed a "retry in 1000ms" that actually fired 5 minutes and
+ * 6 seconds later. A retry gets a clean attempt instead of inheriting that.
+ */
+const CONNECT_ATTEMPTS = 3;
+const RETRY_BASE_MS = 400;
+
+/**
  * Cache the connection on globalThis.
  *
- * A warm Vercel instance serves many requests from one module instance, and
- * several requests can arrive while the first connect is still in flight. We
- * cache the *promise*, not the resolved connection, so concurrent callers all
- * await the same handshake instead of each opening its own.
+ * A warm instance serves many requests from one module instance, and several
+ * can arrive while the first connect is in flight. We cache the *promise*, so
+ * concurrent callers await one handshake instead of each opening their own.
+ *
+ * A rejection is never cached - see connectDB.
  */
 const cache = globalThis.__aitelleMongo || (globalThis.__aitelleMongo = {
   promise: null,
-  clientPromise: null,
-  lastFailureAt: 0
+  clientPromise: null
 });
 
 /**
- * After a failed connect, fail fast for this long instead of making every
- * queued request sit through another 10s handshake timeout. Without it an
- * outage turns each page load into a 10s hang before its 503.
+ * Backoff on the request path. This one is intentionally NOT unref'd: a request
+ * is waiting on it, and an unref'd timer lets Node exit the loop mid-backoff so
+ * the retry never fires at all.
  */
-const FAIL_FAST_MS = 5000;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Backoff for the background session-store loop. Unref'd, so an idle retry
+ * never by itself keeps a serverless instance awake.
+ */
+const sleepIdle = (ms) =>
+  new Promise((resolve) => {
+    const t = setTimeout(resolve, ms);
+    if (typeof t.unref === 'function') t.unref();
+  });
 
 function isConnected() {
   return mongoose.connection.readyState === 1;
 }
 
 /**
- * Connect, or return the in-flight / established connection.
+ * Make up to CONNECT_ATTEMPTS genuinely fresh connection attempts.
  *
  * Deliberately does NOT call process.exit() on failure. Killing the process
- * turns one transient Atlas hiccup into a hard 500 for every request that
- * lands on that instance, including static and health routes that never touch
- * the database. Instead the error propagates to the caller, the cached promise
- * is cleared, and the next request retries.
+ * turns one transient hiccup into a hard 500 for every request on that
+ * instance, including static and health routes that never touch the database.
+ */
+async function connectWithRetry() {
+  let lastError;
+
+for (let attempt = 1; attempt <= CONNECT_ATTEMPTS; attempt++) {
+  try {
+    const m = await mongoose.connect(MONGODB_URI, OPTIONS);
+    console.log(
+      `MongoDB connected: ${m.connection.host}` +
+      (attempt > 1 ? ` (succeeded on attempt ${attempt})` : '')
+      );
+    return m;
+  } catch (err) {
+    lastError = err;
+    console.error(`MongoDB connect attempt ${attempt}/${CONNECT_ATTEMPTS} failed: ${err.message}`);
+    if (attempt < CONNECT_ATTEMPTS) {
+      await sleep(RETRY_BASE_MS * attempt);
+    }
+  }
+}
+
+throw lastError;
+}
+
+/**
+ * Connect, or return the in-flight / established connection.
+ *
+ * There is deliberately no "fail fast" cooldown here. An earlier version kept
+ * one for 5 seconds after a failure so queued requests would not each wait out
+ * a handshake - but the real failure mode is a single stale instance, not a
+ * database outage, so the cooldown mostly manufactured extra silent 503s and
+ * delayed recovery. Retrying is cheap; refusing to try is what hurt.
  */
 function connectDB() {
   if (isConnected() && cache.promise) return cache.promise;
 
-if (!cache.promise && Date.now() - cache.lastFailureAt < FAIL_FAST_MS) {
-  return Promise.reject(new Error('MongoDB unavailable (cooling down after a failed connect)'));
-}
-
 if (!cache.promise) {
-  cache.promise = mongoose
-  .connect(MONGODB_URI, OPTIONS)
-  .then((m) => {
-    console.log(`MongoDB connected: ${m.connection.host}`);
-    return m;
-  })
-  .catch((err) => {
-    // Clear the cache so the next request gets a fresh attempt rather than
-         // replaying a permanently rejected promise.
-         cache.promise = null;
-    cache.lastFailureAt = Date.now();
-    console.error(`MongoDB connection error: ${err.message}`);
+  cache.promise = connectWithRetry().catch((err) => {
+    // Never leave a rejected promise in the cache - the next request must get
+                                           // a clean attempt rather than replaying this failure forever.
+                                           cache.promise = null;
+    cache.clientPromise = null;
     throw err;
   });
 }
 
 return cache.promise;
 }
-
-const sleep = (ms) =>
-  new Promise((resolve) => {
-    const t = setTimeout(resolve, ms);
-    // Don't hold the event loop open just to wait on a retry.
-              if (typeof t.unref === 'function') t.unref();
-  });
 
 /**
  * The underlying MongoClient, for connect-mongo's session store.
@@ -95,25 +129,23 @@ const sleep = (ms) =>
  * The previous setup handed connect-mongo its own mongoUrl, which opened a
  * second client whose failures surfaced as unhandled promise rejections.
  *
- * This promise is deliberately written so it never rejects. connect-mongo holds
- * whatever promise it is given for the life of the process, so a rejection at
- * boot (Mongo briefly unreachable during a cold start) would permanently break
- * sessions on that instance even after Mongo came back. Instead it retries with
- * backoff. Requests are not left hanging on it: the readiness gate in server.js
- * answers 503 while the database is down, so nothing reaches the session
- * middleware until a connection exists.
+ * This promise is written so it never rejects: connect-mongo holds whatever it
+ * is given for the life of the process, so a rejection at boot would break
+ * sessions on that instance permanently. Requests are not left hanging on it -
+ * the readiness gate in server.js answers 503 while the database is down, so
+ * nothing reaches the session middleware until a connection exists.
  */
 function getClientPromise() {
   if (!cache.clientPromise) {
     cache.clientPromise = (async () => {
-      for (let attempt = 1; ; attempt++) {
+      for (let round = 1; ; round++) {
         try {
           const m = await connectDB();
           return m.connection.getClient();
         } catch (err) {
-          const delay = Math.min(1000 * attempt, 30000);
-          console.error(`Session store: Mongo unavailable (attempt ${attempt}), retrying in ${delay}ms`);
-          await sleep(delay);
+          const delay = Math.min(1000 * round, 10000);
+          console.error(`Session store: Mongo unavailable (round ${round}), retrying in ${delay}ms`);
+          await sleepIdle(delay);
         }
       }
     })();

@@ -22,9 +22,12 @@ process.on('unhandledRejection', (reason) => {
   console.error('Unhandled rejection:', reason instanceof Error ? reason.message : reason);
 });
 
-// Warm the connection at boot. Failures are logged inside connectDB; the
-// readiness gate below decides how a request behaves while the DB is down.
-connectDB().catch(() => {});
+// Deliberately no connect-at-boot here. A fire-and-forget connect is not
+// awaited by any request, so Vercel can freeze the instance mid-handshake and
+// the attempt dies unnoticed - production logs showed instances thawing minutes
+// later still holding the dead connection. The readiness gate below is the only
+// thing that opens a connection, which guarantees a live request is always
+// waiting on it.
 
 // Trust proxy - required for Render and other hosting platforms
 app.set('trust proxy', 1);
